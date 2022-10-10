@@ -1,0 +1,620 @@
+---
+title: "Útrokningar av hvussu nógvir bitlar verða upptiknir á kraklingaaliøkjunum"
+author: "Birgitta Andreasen"
+date: "22. jul 2021"
+output: 
+  bookdown::html_document2:
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+
+# pakkar ið skulu nýtast
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+# Suppress summarise info
+options(dplyr.summarise.inform = FALSE)
+
+# scripts sum skulu koyrast
+source("scripts/func_kraklingur_ingested_incl_sensitivity_analysis.R")
+
+# skal tú gera nýggjar df?
+nyggjar <- TRUE
+
+# um tú ikki hevur nokk av ram, so ber ikki til at hyggja at rádata plottunum, set tí rawdata <- FALSE
+rawdata <- TRUE
+
+
+#plot labels
+frac_assimilated_label <- "Waste assimilated"
+frac_ingested_label <- "Particles ingested"
+speedfactor_label <- "Factor adjusted current speed"
+volfilt <- "FR[v]~(l~m^{-3}~h^{-1}))"
+FRv_label <- expression(FR[italic(v)]~(italic(l~m^{-3}~h^{-1})))
+FRv_label_long <- expression("Volumetric Filtration Rate, "(italic(l~m^{-3}~h^{-1})))
+Sv_label <- expression("Settling Velocity, "(italic(cm~s^{-1})))
+Sv_label_standard <- expression(italic(v)~(italic(m~s^{-1})))
+
+# stødd í mm á myndunum
+singlepanel <- 81
+doublepanel <- 169
+
+```
+
+# Útrokningar
+
+## Upplýsingar
+
+Four settling velocities were modeled 7.5, 3.2, 1.5, and 0.1 cm s^-1^ at a distribution of 65, 20, 10, and 5 % respectively.
+
+The ingestion of fish waste (particle waste (PW)) by the blue mussels $I_{PW}$ can be expressed as Equation \@ref(eq:ingestion)
+
+```{=tex}
+\begin{equation}
+I_{PW} = FR_{v} C (\#eq:ingestion)
+\end{equation}
+```
+where:
+
+-   $FR_{v}$ is the filtration rate of the entire mussle population per $m^{3}$ mussel farm
+-   $C$ is the concentration of particles
+
+The change in mass of particles ($m_{PW}$) due to ingestion by the mussels during the total time the waste particles are in the mussel farm ($t$), can be expressed as Equation \@ref(eq:changemass).
+
+```{=tex}
+\begin{equation}
+\frac{\partial m_{PW}}{\partial t} = -FR_{v} m_{PW} (\#eq:changemass)
+\end{equation}
+```
+```{=tex}
+\begin{equation}
+m_{PW}(t) = m_{PW}(0) e^{-FR_{v} t} (\#eq:massnull)
+\end{equation}
+```
+where $m_{PW}(0)$ is the mass of particles at time 0.
+
+When taking into account the constant sinking velocity ($S_{v}$) of the particles, the mass of particles can be expressed as a function of the vertical distance the particles have covered in the mussel farm ($z$):
+
+```{=tex}
+\begin{equation}
+m_{PW}(z) = m_{PW}(0) e^{-\frac{FR_{v} z}{S_{v}}} (\#eq:verticaldistz)
+\end{equation}
+```
+In the dispersion model, the horizontal position of the particle is logged per 1 cm. Thereby the final equation for the fraction of fish waste that is assimilated by the blue mussels during passage through the mussel farm can be expressed as:
+
+```{=tex}
+\begin{equation}
+\frac{m_{assimilated}}{PW} = AE \displaystyle\sum_{S_{v}}^{} \left( \frac{\alpha_{S_v}}{\sum_{i = 0}^{M} f(i, S_{v})} \displaystyle\sum_{i=0}^{M} \left[ f(i, S_{v}) \left( 1 - e^{-\frac{FR_{v}}{S_{v}} z(i)} \right) \right] \right) (\#eq:assimilated)
+\end{equation}
+```
+where:
+
+-   i describes the amount of vertical positions in the mussel farm where the particle was observed
+-   $f(i,S_v)$ describes the number of particle with sinking speed $S_v$ observed on $i$ positions
+-   M is the maximum possible number that $i$ can obtain
+-   $\alpha S_v$ is the fraction of PW with the sinking velocity $S_v$
+-   $z(i)$ is the vertical distance covered in the farm given it was observed $i$ times
+
+Equation \@ref(eq:assimilated) written differently to match dataframe columns.
+
+```{=tex}
+\begin{equation}
+\frac{m_{assimilated}}{PW} = AE \displaystyle\sum_{S_{v}}^{} \left( \alpha_{S_v} \frac{\displaystyle\sum_{i=0}^{M} \left[ f(i, S_{v}) \left( 1 - e^{-\frac{FR_{v}}{S_{v}} z(i)} \right) \right]}{\sum_{i = 0}^{M} f(i, S_{v})} \right) (\#eq:assimilated1)
+\end{equation}
+```
+```{=tex}
+\begin{equation}
+frac\_assimilated = AE \displaystyle\sum_{S_{v}}^{} \left( alpha\_Sv \frac{N\_ingested\_Sv}{N\_dropped} \right) (\#eq:assimilated2)
+\end{equation}
+```
+
+
+```{r}
+# hvør/hvørjar søkkiferðir skal koyrast, vel "01", "15", "32" ella "75" (string)
+ferdir <- c("01", "15", "32", "75")
+
+# hvussu skulu ferðirnar býtast / alpha
+byti <- data.frame(byti1 = c(0, 0.1, 0.2, 0.7), 
+                   byti2 = c(0.05, 0.1, 0.2, 0.65),
+                   byti3 = c(0.27, 0.1, 0.2, 0.43))
+bytidf <- byti %>% 
+  cbind(ferdir) %>% 
+  pivot_longer(-ferdir) %>% 
+  rename(ferd = ferdir,
+         bytinavn = name,
+         alpha_Sv = value)
+
+# hvussu eita kraklingaaliøkini í fílunum?
+krak_navn <- c("1", "2")
+
+# hvat label ynskir tú at seta á kraklingaaliøkini, skal hava somu raðfylgi sum krak_navn omanfyri!!
+krak_label <- c("surface", "submerged")
+
+df_kraklabel <- data.frame(kraknavn = krak_navn, 
+                           label = factor(krak_label, levels = krak_label))
+
+# hvussu nógvir bitlar eru í hvørjari slepping?
+particles <- 58313
+
+# hvussu nógv drops vóru?
+drops <- 1028
+
+totalparticles <- drops * particles
+
+# to convert L/h to m3/s, have to divide by (1000*3600)
+lhm3s <- 3600000
+
+# clearingsrate (L/(h*individual))
+CR <- 3.2
+
+# partur av tilfari sum kræklingur far upptikið
+AE <- 0.86
+
+# mussel density [mussel/m]
+dm <- c(117.1875, seq(120, 2500, 10))
+
+# distance between droppers [m]
+dropperdist <- 0.5
+
+# filtration rate [L/(m*h)]
+FR = CR * dm
+
+# volumetric filtration rate FRv [L/(m3 h)] -> [m3/(m3*s)]
+FRv <- CR * dm * 1/dropperdist / lhm3s
+
+#FRv * lhm3s
+
+
+
+```
+
+## Samla dáturnar fyri kraklingaaliøkini við allar ferðir
+
+```{r}
+
+speedfactor <- sprintf("%.2f", seq(0.1,4,0.1))
+
+if(nyggjar) {
+  
+  # !obs you have to gather them in a single folder! or rewrite previous code to do this for you!!
+  summaries_folder <- "data/processed/summaries/"
+  
+  move_summaries(ferdir, krak_navn, speedfactor, summaries_folder)
+  
+  for(i in speedfactor) {
+    
+    kraksamla(folderpath = summaries_folder, ferdir =  ferdir, krak_navn = krak_navn, speedfactor = i)
+  }
+  
+}
+
+
+```
+
+## hyggja at rá data (speedfactor = 1.00)
+
+```{r}
+# innles nýggju daturammuna, dataramman bleiv goymd her:
+kraksamla1 <- read_csv("data/processed/sensitivities/krak_particle_summary_1.00.csv", 
+                       col_types = cols(kraknavn = col_character()), lazy = FALSE)
+
+# datawrangling
+kraksamla1 <- kraksamla1 %>% 
+  left_join(data.frame(kraknavn = krak_navn,
+                       label = krak_label), 
+            by = "kraknavn") %>% 
+  mutate(meters = mm/1000,
+         speed = as.numeric(ferd)/1000)
+
+
+# summary
+summaryparticles <- kraksamla1 %>% 
+  group_by(kraknavn, label, speed, ferd) %>% 
+  summarise(bitlar_aldrin_alibruk = sum(count[mm==0]),
+            bitlar_igjognum_alibruk = sum(count[mm>0]),
+            bitlar_total = sum(count),
+            frac_igjognum = bitlar_igjognum_alibruk/bitlar_total) %>% 
+  ungroup()
+
+byti_summary <- summaryparticles %>% 
+  left_join(bytidf) %>% 
+  group_by(label, bytinavn) %>% 
+  summarise(N_dropped = sum(alpha_Sv*bitlar_total),
+            N_reach_musselfarm = sum(alpha_Sv*bitlar_igjognum_alibruk),
+            perc_reach_musselfarm = N_reach_musselfarm/N_dropped*100)
+
+if(rawdata == FALSE){
+  rm(kraksamla1)
+}
+```
+
+### Kraklinga aliøki undir liðini á laksaalingini
+
+**legg til merkis at y-axin er ikki á sama scala!**
+
+```{r}
+
+oki <- "1"
+
+plot1 <- kraksamla1 %>% 
+  filter(mm != 0) %>% 
+  filter(mm < 10000) %>% 
+  filter(kraknavn == oki) %>% 
+  ggplot(aes(meters, count)) +
+  geom_point() +
+  facet_grid(speed~kraknavn+label, scales = "free_y") +
+  geom_text(data = summaryparticles %>% 
+              filter(kraknavn == oki),
+            aes(x = Inf, y = Inf, label = paste0("particles that go through the mussle farm = ", scales::percent(frac_igjognum, 0.01))), 
+            hjust = "inward", vjust = "inward", size = 3, colour = "darkred")
+
+#ggsave(paste0("images/particles_pr_length_krak_", oki, "_1.00.png"), plot1, width = 6, height = 8)
+
+plot1
+
+```
+
+### Kraklinga aliøki undir laksaalingini
+
+**legg til merkis at y-axin er ikki á sama scala! og at bitlar, ið detta beint igjognum kraklingaaliøki ikki eru vístir!!**
+
+```{r eval}
+
+oki <- "2"
+
+plot1 <- kraksamla1 %>% 
+  filter(mm != 0) %>% 
+  filter(mm <= 10000) %>% 
+  filter(kraknavn == oki) %>% 
+  ggplot(aes(meters, count)) +
+  geom_point() +
+  facet_grid(speed~kraknavn+label, scales = "free_y") +
+  geom_text(data = summaryparticles %>% 
+              filter(kraknavn == oki),
+            aes(x = Inf, y = Inf, label = paste0("particles that go through the mussle farm = ", scales::percent(frac_igjognum, 0.01))), 
+            hjust = "inward", vjust = "inward", size = 3, colour = "darkred")
+
+#ggsave(paste0("images/particles_pr_length_krak_", oki, "_1.00.png"), plot1, width = 6, height = 8)
+
+plot1
+```
+
+```{r}
+kbl(summaryparticles) %>% 
+  kable_styling() %>% 
+  row_spec(1:4, background = "#42f5b9") %>% 
+  row_spec(5:8, background = "#f783bb")
+
+```
+
+# PW ingested
+
+```{r}
+# ingested by mussels
+speedfactor <- c("0.00", speedfactor)
+
+sensitivity_at_zero(ferdir, krak_navn, totalparticles)
+
+ingested <- krakingested(ferdir, speedfactor, FRv)
+
+```
+
+```{r}
+
+# vel ein FRv
+filterFRv <- CR * 600 * 1/dropperdist / lhm3s
+
+summaryingested <- ingested %>% 
+  filter(speedfactor == 1.00) %>% 
+  filter(FRv == filterFRv)
+
+kbl(summaryingested) %>% 
+  kable_styling() %>% 
+  row_spec(1:4, background = "#42f5b9") %>% 
+  row_spec(5:8, background = "#f783bb")
+```
+
+## plot frac_ingested vs. speedfactor at one FRv
+
+```{r}
+
+ingestedspeedfactor <- ingested %>% 
+  left_join(df_kraklabel, by = "kraknavn") %>%  
+  filter(FRv == filterFRv) %>% 
+  ggplot(aes(speedfactor, frac_ingested, colour = factor(Sv))) +
+  geom_hline(yintercept = 0, colour = "grey20")+
+  geom_line(size = 0.6, aes(linetype = factor(Sv))) +
+  scale_color_viridis_d(name = Sv_label_standard) +
+  scale_linetype_discrete(name = Sv_label_standard) +
+  facet_wrap(.~label, scales = "free_y", ncol = 1) +
+  xlab(speedfactor_label) +
+  ylab(frac_ingested_label) +
+  guides(colour = guide_legend(nrow = 1, byrow = TRUE, title.position = "top")) +
+  #geom_vline(xintercept = filterFRv*lhm3s, linetype = 2) +
+  #geom_text(data = data.frame(filterFRv), 
+  #          aes(x = filterFRv*lhm3s, y = Inf,
+  #              label = paste0(filterFRv*lhm3s, "~L~m^-3~h^-1")),
+  #          vjust = "inward", hjust = 0, colour = "black", parse = TRUE) +
+  theme_minimal(base_size = 9) +
+  theme(strip.background = element_rect(fill = "grey90", colour = NA),
+        legend.position = "top")
+
+ingestedspeedfactor
+
+ingestedspeedfactor2 <- ingestedspeedfactor +
+  facet_wrap(.~label, scales = "free_y", ncol = 2) +
+  guides(colour = guide_legend(ncol = 1)) +
+  theme(legend.position = "right")
+
+
+ggsave(plot = ingestedspeedfactor, 
+       filename = "images/particle_ingestion_vs_speedfactor_at_Sv_singlepanel.pdf",
+       units = "mm",
+       width = singlepanel, height = 160)
+
+ggsave(plot = ingestedspeedfactor2, 
+       filename = "images/particle_ingestion_vs_speedfactor_at_Sv_doublepanel.pdf",
+       units = "mm",
+       width = doublepanel, height = 80)
+
+```
+
+## plot frac_ingested vs. FRv at speedfactor 1.00
+
+```{r}
+
+filterspeedfactor <- 1.00
+
+particleingestion <- ingested %>% 
+  filter(speedfactor == filterspeedfactor) %>% 
+  mutate(frveind = FRv*lhm3s) %>% 
+  left_join(df_kraklabel, by = "kraknavn") %>% 
+  ggplot(aes(frveind, frac_ingested, colour = factor(Sv))) +
+  geom_hline(yintercept = 0, colour = "grey20")+
+  geom_line(size = 1, aes(linetype = factor(Sv))) +
+  scale_color_viridis_d(name = Sv_label_standard) +
+  scale_linetype_discrete(name = Sv_label_standard) +
+  facet_wrap(.~label, scales = "free_y", ncol = 1) +
+  xlab(FRv_label_long) +
+  ylab(frac_ingested_label) +
+  guides(colour = guide_legend(nrow = 2, byrow = TRUE)) +
+  #geom_vline(xintercept = filterFRv*lhm3s, linetype = 2) +
+  #geom_text(data = data.frame(filterFRv), 
+  #          aes(x = filterFRv*lhm3s, y = Inf,
+  #              label = paste0(filterFRv*lhm3s, "~L~m^-3~h^-1")),
+  #          vjust = "inward", hjust = 0, colour = "black", parse = TRUE) +
+  theme_minimal(base_size = 9) +
+  theme(strip.background = element_rect(fill = "grey90", colour = NA),
+        legend.position = "bottom")
+
+particleingestion2 <- particleingestion +
+  facet_wrap(.~label, scales = "free_y", ncol = 2) +
+  guides(colour = guide_legend(ncol = 1)) +
+  theme(legend.position = "right")
+
+# ggsave(plot = particleingestion, 
+#        filename = "images/particle_ingestion_vs_FRv_at_Sv_singlepanel.pdf",
+#        units = "mm",
+#        width = singlepanel, height = 160)
+# 
+# ggsave(plot = particleingestion2, 
+#        filename = "images/particle_ingestion_vs_FRv_at_Sv_doublepanel.pdf",
+#        units = "mm",
+#        width = doublepanel, height = 80)
+
+```
+
+## fraktion assimilated
+
+```{r}
+
+assimilated <- krakassimilated(bytidf, AE, ingested)
+
+head(assimilated)
+```
+
+## Maximum assimilated
+
+```{r}
+# vel ein FRv
+filterFRv <- CR * 600 * 1/dropperdist / lhm3s
+
+maxsummary <- assimilated %>% 
+  group_by(kraknavn, bytinavn) %>% 
+  filter(frac_assimilated == max(frac_assimilated) | (speedfactor %in% c(0.8,1) & FRv == filterFRv)) %>% 
+  left_join(df_kraklabel) %>% 
+  ungroup() %>% 
+  mutate(perc_reach_musselfarm = N_kraklingaoki/N_dropped*100,
+         perc_assimilated = frac_assimilated*100) %>% 
+  select(label, bytinavn, byti, ferdir, speedfactor, FRv, AE, perc_reach_musselfarm, perc_assimilated) %>% 
+  arrange(FRv,speedfactor, label, bytinavn)
+
+maxsummary
+```
+
+## plot frac_assimilated vs. speedfactor at one FRv
+
+```{r}
+
+assimilated_pr_ferd <- krakassimilated_individual(AE, ingested)
+
+litir <- c("#440154FF", "#31688EFF", "#35B779FF", "#fcbe03FF")
+
+
+assimilatedspeedfactor <- assimilated_pr_ferd %>% 
+  left_join(df_kraklabel, by = "kraknavn") %>%  
+  filter(FRv == filterFRv) %>%  
+  ggplot(aes(speedfactor, frac_assimilated, colour = factor(Sv*100))) +
+  geom_hline(yintercept = 0, colour = "grey60")+
+  geom_line(size = 0.6, aes(linetype = factor(Sv*100))) +
+  #scale_color_viridis_d(name = Sv_label, end = 0.9, direction = 1) +
+  scale_color_manual(values = litir, name = Sv_label) +
+  scale_linetype_discrete(name = Sv_label) +
+  facet_wrap(.~label, scales = "free_y", ncol = 1) +
+  xlab(speedfactor_label) +
+  ylab(frac_assimilated_label) +
+  scale_y_continuous(labels = scales::percent) +
+  guides(colour = guide_legend(nrow = 1, byrow = TRUE, title.position = "top")) +
+  #geom_vline(xintercept = filterFRv*lhm3s, linetype = 2) +
+  #geom_text(data = data.frame(filterFRv), 
+  #          aes(x = filterFRv*lhm3s, y = Inf,
+  #              label = paste0(filterFRv*lhm3s, "~L~m^-3~h^-1")),
+  #          vjust = "inward", hjust = 0, colour = "black", parse = TRUE) +
+  theme_minimal(base_size = 9) +
+  theme(strip.background = element_rect(fill = "grey90", colour = NA),
+        legend.position = "top")
+
+assimilatedspeedfactor
+
+assimilatedspeedfactor2 <- assimilatedspeedfactor +
+  facet_wrap(.~label, scales = "free_y", ncol = 2) +
+  #guides(colour = guide_legend(ncol = 1)) +
+  theme(legend.position = "top")
+
+
+ggsave(plot = assimilatedspeedfactor, 
+       filename = "images/waste_assimilatd_vs_speedfactor_at_Sv_singlepanel.pdf",
+       units = "mm",
+       width = singlepanel, height = 160)
+
+ggsave(plot = assimilatedspeedfactor2, 
+       filename = "images/waste_assimilated_vs_speedfactor_at_Sv_doublepanel.pdf",
+       units = "mm",
+       width = doublepanel, height = 80)
+
+ggsave(plot = assimilatedspeedfactor, 
+       filename = "images/waste_assimilatd_vs_speedfactor_at_Sv_singlepanel.png",
+       units = "mm",
+       width = singlepanel, height = 160)
+
+ggsave(plot = assimilatedspeedfactor2, 
+       filename = "images/waste_assimilated_vs_speedfactor_at_Sv_doublepanel.png",
+       units = "mm",
+       width = doublepanel, height = 80)
+
+```
+
+## plot frac_assimilated vs. speedfactor at all calculated FRv and at three different speed divisions a, b, and c
+
+```{r}
+
+colorbreaks <- seq(0,17500, 2500)
+colorbreaks <- c(750, seq(2500, 15000, 2500), 16000)
+dflabels <- data.frame(pent = factor(colorbreaks),
+                       bolkurgroup = factor(1:length(colorbreaks)))
+
+ordid <- "division "
+
+ordiorder <- c(paste0(krak_label[[1]], " - ", ordid, c("a", "b", "c")), paste0(
+  krak_label[[2]], " - ", ordid, c("a", "b", "c")))
+
+dfplot <- assimilated %>%
+  left_join(df_kraklabel) %>% 
+  ungroup() %>% 
+  mutate(bolkur = FRv*lhm3s,
+         bolkurgroup = cut(bolkur, colorbreaks, labels = FALSE),
+         bolkurgroup = factor(bolkurgroup),
+         disk = cut_width(bolkur, width = 4000),
+         #bolkur = factor(bolkur),
+         #bolkur = fct_reorder(bolkur, FRv, .desc = TRUE)
+  ) %>% 
+  mutate(combination = str_replace_all(bytinavn, "byti", ordid),
+         combination = str_replace_all(combination, c("1" = "a",
+                                                      "2" = "b",
+                                                      "3" = "c")),
+         wrapabel = paste0(label, " - ", combination),
+         wrapabel = factor(wrapabel, levels = ordiorder)) %>% 
+  left_join(dflabels) %>% 
+  mutate(pentfactor = factor(pent, levels = rev(dflabels$pent)))
+
+fill.order = factor(dfplot$pent, levels = colorbreaks)
+
+filteras <- dfplot %>% 
+  filter(FRv == filterFRv)
+filterspeed <- dfplot %>% 
+  filter(speedfactor == 1.00) %>% 
+  filter(FRv <= filterFRv)
+
+dfscales <- data.frame(kraknavn = as.character(c(1, 1, 1, 2, 2, 2)),
+                       bytinavn =c("byti1", "byti2", "byti3", "byti1", "byti2", "byti3"),
+                       x = c(3,3,3,3,3,3),
+                       y = c(0.024, 0.024, 0.065, 0.65, 0.65, 0.65)) %>% 
+  left_join(filterspeed %>% filter(FRv == filterFRv)) %>% 
+  left_join(df_kraklabel) %>% 
+  mutate(combination = str_replace_all(bytinavn, "byti", ordid),
+         combination = str_replace_all(combination, c("1" = "a",
+                                                      "2" = "b",
+                                                      "3" = "c")),
+         wrapabel = paste0(label, " - ", combination),
+         wrapabel = factor(wrapabel, levels = ordiorder))
+
+
+
+different_fractions <- dfplot %>% 
+  ggplot(aes(y = frac_assimilated, x = speedfactor, 
+             color = bolkur, 
+             fill = bolkur
+  )) +
+  #scale_color_stepsn(colors = viridis::viridis(8), name = FRv_label)+
+  #scale_fill_stepsn(colors = viridis::viridis(8), name = FRv_label)+
+  scale_color_binned(type = "viridis", n.breaks = 7, 
+                     name = FRv_label_long, 
+                     #breaks = colorbreaks[1:7],
+                     limits = c(750, 16000)) +
+  #scale_color_viridis_d(name = FRv_label)+
+  #scale_fill_viridis_d(name = FRv_label, ) +
+  
+  #geom_area(aes(group= (FRv)), position = position_identity()) +
+  geom_line(aes(group = FRv), size = 0.45) +
+  geom_line(data = filteras, colour = "red", show.legend = FALSE) +
+  #geom_line(data = filterspeed, colour = "red", show.legend = FALSE) +
+  geom_point(data = filterspeed %>% filter(FRv == filterFRv), 
+             colour = "red", show.legend = FALSE) +
+  geom_blank(data = dfscales, aes(x,y))+
+  ggrepel::geom_text_repel(data = dfscales, 
+                           aes(label = scales::percent(frac_assimilated, 0.01)),
+                           nudge_x = Inf, nudge_y = Inf, 
+                           segment.linetype = 3,
+                           size = 3,
+                           #segment.curvature = -0.001,
+                           #arrow = arrow(length = unit(0.1, "cm")),
+                           colour = "red"
+  ) +
+  facet_wrap(wrapabel~., scales = "free")+
+  guides(color = guide_colorbar(barheight = 0.5, barwidth = 15, 
+                                title.position = "top"))+
+  ylab(frac_assimilated_label)+
+  scale_y_continuous(labels = scales::percent, expand = c(0,0)) +
+  #coord_cartesian(xlim = c(0.11,4), expand = FALSE)+
+  xlab(speedfactor_label) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  theme_minimal(base_size = 9) +
+  theme(legend.position = "top",
+        legend.title = element_text(),
+        strip.background = element_rect(fill = "grey90", colour = NA))
+
+different_fractions
+
+
+```
+
+```{r}
+ggsave(plot = different_fractions, 
+       filename = "images/waste_assimilated_vs_speedfactor_at_FRv_doublepanel.pdf",
+       units = "mm",
+       width = doublepanel, height = 120)
+
+ggsave(plot = different_fractions, 
+       filename = "images/waste_assimilated_vs_speedfactor_at_FRv_doublepanel.png",
+       units = "mm",
+       width = doublepanel, height = 120)
+
+
+```

@@ -1,0 +1,46 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+.config/
+.local/
+
+# "gis" fílir
+data/geodata/Aling.gdb/
+data/geodata/dybsimplified/
+data/geodata/dybdarkurvar.gdb/
+data/geodata/lendiskort.gdb/
+
+# geo rds fílir, frá get_geodata.R
+data/alifirdir.rds
+data/alioki.rds
+data/dyb10.rds
+data/dyb5.rds
+data/dybsimp.rds
+data/oyggjar.rds
+data/alioki_sorvag.rds
+data/alieind.rds
+data/dyb10_allar.rds
+data/oyggjar_allar.rds
+
+# file types
+*.pptx
+*.html
+
+# processera data
+data/processed/*
+
+# roteraðar datarammir
+data/roterad/*
+
+# images til gifs
+images/*
+
+# current measurement
+SORD1702/*
+
+# python 
+misc/__pycache__/*
+
+# output files from python particle track
+out*.csv
